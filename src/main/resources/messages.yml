@@ -2,7 +2,7 @@
 #          NottPay - Messages
 # ============================================
 # Color codes: & followed by color code (e.g., &a = green, &c = red)
-# Placeholders: {sender}, {receiver}, {amount}, {currency}, {balance}, {player}, {input}, {command}, {min}, {page}, {max_page}, {date}
+# Placeholders: {sender}, {receiver}, {amount}, {currency}, {balance}, {player}, {input}, {command}, {min}, {page}, {max_page}, {date}, {count}
 
 pay:
   success-sender: "&aHas enviado &e{amount} {currency} &aa &e{receiver}&a."
@@ -14,6 +14,9 @@ pay:
   invalid-currency: "&cMoneda no encontrada: &e{currency}"
   usage: "&cUso: &e/{command} <jugador> <moneda> <cantidad>"
   min-amount: "&cLa cantidad mínima es &e{min}&c."
+  # /pay all messages
+  all-success: "&aHas enviado &e{amount} {currency} &aa &e{count} &ajugadores."
+  all-no-players: "&cNo hay otros jugadores conectados."
 
 transactions:
   header: "&6&l━━━ Transacciones ━━━ &7(Pág. {page}/{max_page})"
@@ -27,3 +30,4 @@ general:
   no-permission: "&cNo tienes permiso para usar este comando."
   only-players: "&cSolo los jugadores pueden usar este comando."
   reload-success: "&aConfiguración recargada correctamente."
+  admin-usage: "&cUso: &e/{command} reload"

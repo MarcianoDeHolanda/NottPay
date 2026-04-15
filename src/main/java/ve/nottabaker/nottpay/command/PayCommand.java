@@ -96,7 +96,7 @@ public class PayCommand implements CommandExecutor, TabCompleter {
                     .collect(Collectors.toList());
 
             if (onlinePlayers.isEmpty()) {
-                sender.sendMessage(ConfigManager.translateColors("&cNo hay otros jugadores conectados."));
+                sender.sendMessage(config.getMessage("pay.all-no-players"));
                 return true;
             }
 
@@ -142,7 +142,10 @@ public class PayCommand implements CommandExecutor, TabCompleter {
                 }
             }
 
-            sender.sendMessage(ConfigManager.translateColors("&aHas enviado &e" + formattedAmount + " " + displayName + " &aa &e" + successfulDeposits + " &ajugadores."));
+            sender.sendMessage(config.getMessage("pay.all-success")
+                    .replace("{amount}", formattedAmount)
+                    .replace("{currency}", displayName)
+                    .replace("{count}", String.valueOf(successfulDeposits)));
             return true;
         }
 

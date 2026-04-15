@@ -37,7 +37,8 @@ public class NottPayCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        sender.sendMessage(ConfigManager.translateColors("&cUsage: /" + label + " reload"));
+        sender.sendMessage(config.getMessage("general.admin-usage")
+                .replace("{command}", label));
         return true;
     }
 
