@@ -31,3 +31,4 @@ general:
   only-players: "&cSolo los jugadores pueden usar este comando."
   reload-success: "&aConfiguración recargada correctamente."
   admin-usage: "&cUso: &e/{command} reload"
+  cooldown: "&cDebes esperar &e{time}s &cantes de volver a usar este comando."

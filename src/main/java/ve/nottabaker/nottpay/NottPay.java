@@ -12,6 +12,7 @@ import ve.nottabaker.nottpay.config.ConfigManager;
 import ve.nottabaker.nottpay.currency.CurrencyManager;
 import ve.nottabaker.nottpay.transaction.TransactionManager;
 import ve.nottabaker.nottpay.util.AmountParser;
+import ve.nottabaker.nottpay.util.CooldownManager;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -32,6 +33,7 @@ public class NottPay extends JavaPlugin {
     private CurrencyManager currencyManager;
     private TransactionManager transactionManager;
     private AmountParser amountParser;
+    private CooldownManager cooldownManager;
 
     @Override
     public void onEnable() {
@@ -50,6 +52,10 @@ public class NottPay extends JavaPlugin {
 
         // Initialize transaction manager
         transactionManager = new TransactionManager(this);
+
+        // Initialize cooldown manager and register as listener
+        cooldownManager = new CooldownManager(this);
+        Bukkit.getPluginManager().registerEvents(cooldownManager, this);
 
         // Register commands dynamically
         registerCommands();
@@ -167,5 +173,9 @@ public class NottPay extends JavaPlugin {
 
     public AmountParser getAmountParser() {
         return amountParser;
+    }
+
+    public CooldownManager getCooldownManager() {
+        return cooldownManager;
     }
 }

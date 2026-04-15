@@ -46,6 +46,16 @@ public class PayCommand implements CommandExecutor, TabCompleter {
                 player.sendMessage(config.getMessage("general.no-permission"));
                 return true;
             }
+
+            // Cooldown check (bypass for admins)
+            if (!player.hasPermission("nottpay.bypass.cooldown")) {
+                long remaining = plugin.getCooldownManager().getRemainingSeconds(player.getUniqueId(), "pay");
+                if (remaining > 0) {
+                    player.sendMessage(config.getMessage("general.cooldown")
+                            .replace("{time}", String.valueOf(remaining)));
+                    return true;
+                }
+            }
         }
 
         // Usage check
@@ -146,6 +156,11 @@ public class PayCommand implements CommandExecutor, TabCompleter {
                     .replace("{amount}", formattedAmount)
                     .replace("{currency}", displayName)
                     .replace("{count}", String.valueOf(successfulDeposits)));
+
+            // Set cooldown after successful /pay all
+            if (isPlayer) {
+                plugin.getCooldownManager().setCooldown(player.getUniqueId(), "pay");
+            }
             return true;
         }
 
@@ -206,6 +221,11 @@ public class PayCommand implements CommandExecutor, TabCompleter {
                 currencyName, amount, System.currentTimeMillis()
         );
         plugin.getTransactionManager().addTransaction(transaction);
+
+        // Set cooldown after successful single payment
+        if (isPlayer) {
+            plugin.getCooldownManager().setCooldown(player.getUniqueId(), "pay");
+        }
 
         return true;
     }

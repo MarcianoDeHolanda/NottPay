@@ -46,6 +46,16 @@ public class TransactionCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        // Cooldown check (bypass for admins)
+        if (!player.hasPermission("nottpay.bypass.cooldown")) {
+            long remaining = plugin.getCooldownManager().getRemainingSeconds(player.getUniqueId(), "transactions");
+            if (remaining > 0) {
+                player.sendMessage(config.getMessage("general.cooldown")
+                        .replace("{time}", String.valueOf(remaining)));
+                return true;
+            }
+        }
+
         int perPage = plugin.getConfig().getInt("transaction-command.per-page", 10);
         int page = 1;
 
@@ -112,6 +122,9 @@ public class TransactionCommand implements CommandExecutor, TabCompleter {
 
                 // Footer
                 player.sendMessage(config.getRawMessage("transactions.footer"));
+
+                // Set cooldown after successful display
+                plugin.getCooldownManager().setCooldown(player.getUniqueId(), "transactions");
             });
         });
 

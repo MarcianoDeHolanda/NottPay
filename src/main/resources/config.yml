@@ -47,3 +47,10 @@ database:
     database: "nottpay"
     username: "root"
     password: ""
+
+# Cooldown settings (in seconds)
+# Set to 0 to disable the cooldown for that command.
+# Players with the permission "nottpay.bypass.cooldown" bypass all cooldowns.
+cooldowns:
+  pay: 5
+  transactions: 3
