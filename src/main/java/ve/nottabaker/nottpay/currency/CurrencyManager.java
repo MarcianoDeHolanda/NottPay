@@ -62,8 +62,10 @@ public class CurrencyManager {
             }
 
             String providerCurrencyId = providerName.equals("edtools") ? edtoolsCurrency : key;
-            currencies.put(key.toLowerCase(), new CurrencyEntry(key, displayName, provider, providerCurrencyId));
-            log.info("Registered currency: " + key + " (provider: " + providerName + ")");
+            // Bypass booster by default for EdTools to prevent payment duplication
+            boolean bypassBooster = currSec.getBoolean("bypass-booster", true);
+            currencies.put(key.toLowerCase(), new CurrencyEntry(key, displayName, provider, providerCurrencyId, bypassBooster));
+            log.info("Registered currency: " + key + " (provider: " + providerName + ", bypass-booster: " + bypassBooster + ")");
         }
 
         log.info("Loaded " + currencies.size() + " currencies.");
@@ -112,17 +114,26 @@ public class CurrencyManager {
     }
 
     /**
-     * Deposit into a player's balance.
+     * Deposit into a player's balance, respecting bypass-booster config.
      */
     public boolean deposit(Player player, String currencyName, double amount) {
         CurrencyEntry entry = getCurrency(currencyName);
         if (entry == null) return false;
+        // If EdTools provider and bypass-booster is enabled, use direct set
+        if (entry.provider() instanceof ve.nottabaker.nottpay.currency.provider.EdToolsProvider edtp) {
+            return edtp.deposit(player, entry.providerCurrencyId(), amount, entry.bypassBooster());
+        }
         return entry.provider().deposit(player, entry.providerCurrencyId(), amount);
     }
 
     /**
      * Represents a registered currency mapping.
+     *
+     * @param bypassBooster If true (default), EdTools deposits use setCurrency() to avoid
+     *                      triggering EdToolsCurrencyAddEvent (where boosters hook).
+     *                      Set to false in currencies.yml if you WANT boosters to apply.
      */
-    public record CurrencyEntry(String id, String displayName, CurrencyProvider provider, String providerCurrencyId) {
+    public record CurrencyEntry(String id, String displayName, CurrencyProvider provider,
+                                String providerCurrencyId, boolean bypassBooster) {
     }
 }

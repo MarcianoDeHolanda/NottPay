@@ -7,9 +7,11 @@
 #   display-name: The name shown in messages (supports color codes)
 #   provider: Which economy plugin handles this currency ("vault" or "edtools")
 #   edtools-currency: (Only for edtools provider) The currency ID in EdTools
-#
-# Example EdTools currencies: gems, tokens, souls, etc.
-# Vault only supports one currency (the server's main economy)
+#   bypass-booster: (Only for edtools provider, default: true)
+#     - true  → deposit uses setCurrency() directly — booster plugins will NOT apply
+#               This is the recommended setting for /pay to avoid economy exploits.
+#     - false → deposit uses addCurrency() — EdToolsCurrencyAddEvent fires and
+#               booster plugins WILL multiply the amount (same as earning currency normally)
 
 currencies:
   money:
@@ -20,8 +22,10 @@ currencies:
     display-name: "&bGemas"
     provider: "edtools"
     edtools-currency: "gems"
+    bypass-booster: true   # Booster will NOT apply when receiving via /pay
 
   tokens:
     display-name: "&dTokens"
     provider: "edtools"
     edtools-currency: "tokens"
+    bypass-booster: true   # Booster will NOT apply when receiving via /pay
