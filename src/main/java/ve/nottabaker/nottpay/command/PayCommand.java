@@ -15,16 +15,18 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * Handles the /pay command for transferring currencies between players.
- * Usage: /pay <player> <currency> <amount>
+ * Also supports /pay all (Admin & Console).
  */
 public class PayCommand implements CommandExecutor, TabCompleter {
 
     private final NottPay plugin;
     private static final DecimalFormat AMOUNT_FORMAT = new DecimalFormat("#,##0.##");
+    private static final UUID CONSOLE_UUID = UUID.nameUUIDFromBytes("Console".getBytes());
 
     public PayCommand(NottPay plugin) {
         this.plugin = plugin;
@@ -34,23 +36,21 @@ public class PayCommand implements CommandExecutor, TabCompleter {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         ConfigManager config = plugin.getConfigManager();
 
-        // Only players can use this command
-        if (!(sender instanceof Player player)) {
-            sender.sendMessage(config.getMessage("general.only-players"));
-            return true;
-        }
+        boolean isPlayer = sender instanceof Player;
+        Player player = isPlayer ? (Player) sender : null;
 
-        // Permission check
-        String permission = plugin.getConfig().getString("pay-command.permission", "nottpay.pay");
-        if (!permission.isEmpty() && !player.hasPermission(permission)) {
-            player.sendMessage(config.getMessage("general.no-permission"));
-            return true;
+        // Player permission check
+        if (isPlayer) {
+            String permission = plugin.getConfig().getString("pay-command.permission", "nottpay.pay");
+            if (!permission.isEmpty() && !player.hasPermission(permission)) {
+                player.sendMessage(config.getMessage("general.no-permission"));
+                return true;
+            }
         }
 
         // Usage check
         if (args.length < 3) {
-            player.sendMessage(config.getMessage("pay.usage")
-                    .replace("{command}", label));
+            sender.sendMessage(config.getMessage("pay.usage").replace("{command}", label));
             return true;
         }
 
@@ -58,25 +58,11 @@ public class PayCommand implements CommandExecutor, TabCompleter {
         String currencyName = args[1];
         String amountInput = args[2];
 
-        // Find target player (must be online)
-        Player target = Bukkit.getPlayerExact(targetName);
-        if (target == null) {
-            player.sendMessage(config.getMessage("pay.player-not-found")
-                    .replace("{player}", targetName));
-            return true;
-        }
-
-        // Can't pay yourself
-        if (target.getUniqueId().equals(player.getUniqueId())) {
-            player.sendMessage(config.getMessage("pay.self-pay"));
-            return true;
-        }
-
         // Validate currency
         CurrencyManager currencyManager = plugin.getCurrencyManager();
         CurrencyManager.CurrencyEntry currency = currencyManager.getCurrency(currencyName);
         if (currency == null) {
-            player.sendMessage(config.getMessage("pay.invalid-currency")
+            sender.sendMessage(config.getMessage("pay.invalid-currency")
                     .replace("{currency}", currencyName));
             return true;
         }
@@ -84,50 +70,125 @@ public class PayCommand implements CommandExecutor, TabCompleter {
         // Parse amount
         double amount = plugin.getAmountParser().parse(amountInput);
         if (amount <= 0) {
-            player.sendMessage(config.getMessage("pay.invalid-amount")
+            sender.sendMessage(config.getMessage("pay.invalid-amount")
                     .replace("{input}", amountInput));
             return true;
         }
 
-        // Check minimum amount
         if (amount < 0.01) {
-            player.sendMessage(config.getMessage("pay.min-amount")
+            sender.sendMessage(config.getMessage("pay.min-amount")
                     .replace("{min}", "0.01"));
             return true;
         }
 
-        // Check balance
-        double balance = currencyManager.getBalance(player, currencyName);
         String formattedAmount = AMOUNT_FORMAT.format(amount);
         String displayName = ConfigManager.translateColors(currency.displayName());
 
-        if (balance < amount) {
-            player.sendMessage(config.getMessage("pay.insufficient-funds")
-                    .replace("{currency}", displayName)
-                    .replace("{balance}", AMOUNT_FORMAT.format(balance)));
+        // Handle /pay all
+        if (targetName.equalsIgnoreCase("all") || targetName.equals("*")) {
+            if (!sender.hasPermission("nottpay.admin") && !sender.hasPermission("nottpay.admin.payall")) {
+                sender.sendMessage(config.getMessage("general.no-permission"));
+                return true;
+            }
+
+            List<Player> onlinePlayers = Bukkit.getOnlinePlayers().stream()
+                    .filter(p -> !isPlayer || !p.getUniqueId().equals(player.getUniqueId()))
+                    .collect(Collectors.toList());
+
+            if (onlinePlayers.isEmpty()) {
+                sender.sendMessage(ConfigManager.translateColors("&cNo hay otros jugadores conectados."));
+                return true;
+            }
+
+            double totalAmount = amount * onlinePlayers.size();
+
+            // If player, check if they can afford the total
+            if (isPlayer) {
+                double balance = currencyManager.getBalance(player, currencyName);
+                if (balance < totalAmount) {
+                    player.sendMessage(config.getMessage("pay.insufficient-funds")
+                            .replace("{currency}", displayName)
+                            .replace("{balance}", AMOUNT_FORMAT.format(balance)));
+                    return true;
+                }
+                
+                if (!currencyManager.withdraw(player, currencyName, totalAmount)) {
+                    player.sendMessage(config.getMessage("pay.insufficient-funds")
+                            .replace("{currency}", displayName)
+                            .replace("{balance}", AMOUNT_FORMAT.format(balance)));
+                    return true;
+                }
+            }
+
+            // Distribute to all
+            String senderName = isPlayer ? player.getName() : "Console";
+            UUID senderId = isPlayer ? player.getUniqueId() : CONSOLE_UUID;
+            int successfulDeposits = 0;
+
+            for (Player target : onlinePlayers) {
+                if (currencyManager.deposit(target, currencyName, amount)) {
+                    successfulDeposits++;
+                    
+                    target.sendMessage(config.getMessage("pay.success-receiver")
+                            .replace("{amount}", formattedAmount)
+                            .replace("{currency}", displayName)
+                            .replace("{sender}", senderName));
+
+                    Transaction transaction = new Transaction(
+                            senderId, target.getUniqueId(), senderName, target.getName(),
+                            currencyName, amount, System.currentTimeMillis()
+                    );
+                    plugin.getTransactionManager().addTransaction(transaction);
+                }
+            }
+
+            sender.sendMessage(ConfigManager.translateColors("&aHas enviado &e" + formattedAmount + " " + displayName + " &aa &e" + successfulDeposits + " &ajugadores."));
             return true;
         }
 
-        // Perform transaction
-        boolean withdrawn = currencyManager.withdraw(player, currencyName, amount);
-        if (!withdrawn) {
-            player.sendMessage(config.getMessage("pay.insufficient-funds")
-                    .replace("{currency}", displayName)
-                    .replace("{balance}", AMOUNT_FORMAT.format(balance)));
+        // Handle single payment
+        Player target = Bukkit.getPlayerExact(targetName);
+        if (target == null) {
+            sender.sendMessage(config.getMessage("pay.player-not-found")
+                    .replace("{player}", targetName));
             return true;
         }
 
-        boolean deposited = currencyManager.deposit(target, currencyName, amount);
-        if (!deposited) {
-            // Rollback: give money back to sender
-            currencyManager.deposit(player, currencyName, amount);
-            player.sendMessage(config.getMessage("pay.invalid-currency")
+        if (isPlayer && target.getUniqueId().equals(player.getUniqueId())) {
+            sender.sendMessage(config.getMessage("pay.self-pay"));
+            return true;
+        }
+
+        if (isPlayer) {
+            double balance = currencyManager.getBalance(player, currencyName);
+            if (balance < amount) {
+                player.sendMessage(config.getMessage("pay.insufficient-funds")
+                        .replace("{currency}", displayName)
+                        .replace("{balance}", AMOUNT_FORMAT.format(balance)));
+                return true;
+            }
+
+            if (!currencyManager.withdraw(player, currencyName, amount)) {
+                player.sendMessage(config.getMessage("pay.insufficient-funds")
+                        .replace("{currency}", displayName)
+                        .replace("{balance}", AMOUNT_FORMAT.format(balance)));
+                return true;
+            }
+        }
+
+        if (!currencyManager.deposit(target, currencyName, amount)) {
+            if (isPlayer) {
+                currencyManager.deposit(player, currencyName, amount); // Rollback
+            }
+            sender.sendMessage(config.getMessage("pay.invalid-currency")
                     .replace("{currency}", currencyName));
             return true;
         }
 
-        // Send success messages
-        player.sendMessage(config.getMessage("pay.success-sender")
+        String senderName = isPlayer ? player.getName() : "Console";
+        UUID senderId = isPlayer ? player.getUniqueId() : CONSOLE_UUID;
+
+        sender.sendMessage(config.getMessage("pay.success-sender")
                 .replace("{amount}", formattedAmount)
                 .replace("{currency}", displayName)
                 .replace("{receiver}", target.getName()));
@@ -135,17 +196,11 @@ public class PayCommand implements CommandExecutor, TabCompleter {
         target.sendMessage(config.getMessage("pay.success-receiver")
                 .replace("{amount}", formattedAmount)
                 .replace("{currency}", displayName)
-                .replace("{sender}", player.getName()));
+                .replace("{sender}", senderName));
 
-        // Record transaction
         Transaction transaction = new Transaction(
-                player.getUniqueId(),
-                target.getUniqueId(),
-                player.getName(),
-                target.getName(),
-                currencyName,
-                amount,
-                System.currentTimeMillis()
+                senderId, target.getUniqueId(), senderName, target.getName(),
+                currencyName, amount, System.currentTimeMillis()
         );
         plugin.getTransactionManager().addTransaction(transaction);
 
@@ -154,23 +209,23 @@ public class PayCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (!(sender instanceof Player)) return Collections.emptyList();
-
-        String permission = plugin.getConfig().getString("pay-command.permission", "nottpay.pay");
-        if (!permission.isEmpty() && !sender.hasPermission(permission)) return Collections.emptyList();
+        boolean isPlayer = sender instanceof Player;
+        boolean isAdmin = sender.hasPermission("nottpay.admin") || sender.hasPermission("nottpay.admin.payall");
 
         if (args.length == 1) {
-            // Tab complete: online player names (exclude self)
             String input = args[0].toLowerCase();
-            return Bukkit.getOnlinePlayers().stream()
-                    .filter(p -> !p.getUniqueId().equals(((Player) sender).getUniqueId()))
+            List<String> list = Bukkit.getOnlinePlayers().stream()
+                    .filter(p -> !isPlayer || !p.getUniqueId().equals(((Player) sender).getUniqueId()))
                     .map(Player::getName)
                     .filter(name -> name.toLowerCase().startsWith(input))
                     .collect(Collectors.toList());
+            if (isAdmin && "all".startsWith(input)) {
+                list.add("all");
+            }
+            return list;
         }
 
         if (args.length == 2) {
-            // Tab complete: currency names
             String input = args[1].toLowerCase();
             return plugin.getCurrencyManager().getCurrencyNames().stream()
                     .filter(name -> name.startsWith(input))
@@ -178,7 +233,6 @@ public class PayCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 3) {
-            // Tab complete: suggested amounts
             List<String> suggestions = new ArrayList<>();
             suggestions.add("1");
             suggestions.add("10");

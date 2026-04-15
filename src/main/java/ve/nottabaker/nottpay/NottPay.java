@@ -5,6 +5,7 @@ import org.bukkit.command.CommandMap;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+import ve.nottabaker.nottpay.command.NottPayCommand;
 import ve.nottabaker.nottpay.command.PayCommand;
 import ve.nottabaker.nottpay.command.TransactionCommand;
 import ve.nottabaker.nottpay.config.ConfigManager;
@@ -102,6 +103,17 @@ public class NottPay extends JavaPlugin {
             txCommand.setUsage("/<command> [page]");
             registerToCommandMap(txCommand);
             getLogger().info("Registered command: /" + txName + " (aliases: " + txAliases + ")");
+        }
+
+        // Admin command
+        NottPayCommand adminExecutor = new NottPayCommand(this);
+        PluginCommand adminCommand = createPluginCommand("nottpay");
+        if (adminCommand != null) {
+            adminCommand.setExecutor(adminExecutor);
+            adminCommand.setTabCompleter(adminExecutor);
+            adminCommand.setDescription("Admin commands for NottPay");
+            registerToCommandMap(adminCommand);
+            getLogger().info("Registered command: /nottpay");
         }
     }
 
