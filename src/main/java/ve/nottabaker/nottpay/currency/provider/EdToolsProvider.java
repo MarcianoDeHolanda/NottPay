@@ -30,7 +30,10 @@ public class EdToolsProvider implements CurrencyProvider {
         if (currencyAPI == null) return false;
         if (bypassBooster) {
             double current = currencyAPI.getCurrency(player.getUniqueId(), currency);
-            currencyAPI.setCurrency(player.getUniqueId(), currency, current + amount);
+            double max = currencyAPI.getMaxCurrencyValue(currency);
+            // Respect EdTools max cap even when bypassing the event
+            double newBalance = (max > 0) ? Math.min(current + amount, max) : current + amount;
+            currencyAPI.setCurrency(player.getUniqueId(), currency, newBalance);
         } else {
             currencyAPI.addCurrency(player.getUniqueId(), currency, amount);
         }

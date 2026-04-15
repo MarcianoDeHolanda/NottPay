@@ -66,6 +66,7 @@ public class TransactionManager {
     }
 
     private void createTable() {
+        if (dataSource == null) return;
         String sql = "CREATE TABLE IF NOT EXISTS nottpay_transactions (" +
                 (dbType.equals("SQLITE") ? "id INTEGER PRIMARY KEY AUTOINCREMENT, " : "id INT AUTO_INCREMENT PRIMARY KEY, ") +
                 "sender VARCHAR(36) NOT NULL, " +
@@ -76,14 +77,35 @@ public class TransactionManager {
                 "amount DOUBLE NOT NULL, " +
                 "timestamp BIGINT NOT NULL)";
 
-        String indexSender = "CREATE INDEX IF NOT EXISTS idx_sender ON nottpay_transactions(sender)";
-        String indexReceiver = "CREATE INDEX IF NOT EXISTS idx_receiver ON nottpay_transactions(receiver)";
-
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
             stmt.execute(sql);
-            stmt.execute(indexSender);
-            stmt.execute(indexReceiver);
+
+            if (dbType.equals("SQLITE")) {
+                // SQLite supports CREATE INDEX IF NOT EXISTS
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_sender ON nottpay_transactions(sender)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_receiver ON nottpay_transactions(receiver)");
+            } else {
+                // MySQL < 8.0 does not support CREATE INDEX IF NOT EXISTS
+                // Use a safe INSERT IGNORE workaround via information_schema
+                String checkIndex = "SELECT COUNT(*) FROM information_schema.statistics " +
+                        "WHERE table_schema = DATABASE() AND table_name = 'nottpay_transactions' AND index_name = ?";
+
+                try (PreparedStatement ps = conn.prepareStatement(checkIndex)) {
+                    ps.setString(1, "idx_sender");
+                    ResultSet rs = ps.executeQuery();
+                    if (rs.next() && rs.getInt(1) == 0) {
+                        stmt.execute("CREATE INDEX idx_sender ON nottpay_transactions(sender)");
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(checkIndex)) {
+                    ps.setString(1, "idx_receiver");
+                    ResultSet rs = ps.executeQuery();
+                    if (rs.next() && rs.getInt(1) == 0) {
+                        stmt.execute("CREATE INDEX idx_receiver ON nottpay_transactions(receiver)");
+                    }
+                }
+            }
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Could not create database tables!", e);
         }
@@ -99,6 +121,7 @@ public class TransactionManager {
      * Records a new transaction asynchronously.
      */
     public void addTransaction(Transaction tx) {
+        if (dataSource == null) return;
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             String sql = "INSERT INTO nottpay_transactions (sender, receiver, sender_name, receiver_name, currency, amount, timestamp) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
@@ -121,69 +144,86 @@ public class TransactionManager {
     }
 
     /**
-     * Get a paginated view of a player's transactions directly from DB.
-     * Note: This hits the DB on main thread during command execution,
-     * but SQLite/Hikari queries are typically <1ms and perfectly safe for this scale.
+     * Get a paginated view of a player's transactions from DB asynchronously.
+     * Runs the query off the main thread and fires a callback with the results.
+     *
+     * @param playerUUID The player's UUID
+     * @param page       1-indexed page number
+     * @param perPage    Items per page
+     * @param callback   Called on the main thread with the resulting list
      */
-    public List<Transaction> getTransactionsPaged(UUID playerUUID, int page, int perPage) {
-        List<Transaction> list = new ArrayList<>();
-        int offset = (page - 1) * perPage;
-
-        String uuidStr = playerUUID.toString();
-        String sql = "SELECT * FROM nottpay_transactions " +
-                "WHERE sender = ? OR receiver = ? " +
-                "ORDER BY timestamp DESC LIMIT ? OFFSET ?";
-
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-            pstmt.setString(1, uuidStr);
-            pstmt.setString(2, uuidStr);
-            pstmt.setInt(3, perPage);
-            pstmt.setInt(4, offset);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    Transaction tx = new Transaction(
-                            UUID.fromString(rs.getString("sender")),
-                            UUID.fromString(rs.getString("receiver")),
-                            rs.getString("sender_name"),
-                            rs.getString("receiver_name"),
-                            rs.getString("currency"),
-                            rs.getDouble("amount"),
-                            rs.getLong("timestamp")
-                    );
-                    list.add(tx);
-                }
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Error fetching paginated transactions", e);
+    public void getTransactionsPaged(UUID playerUUID, int page, int perPage,
+                                     java.util.function.Consumer<List<Transaction>> callback) {
+        if (dataSource == null) {
+            callback.accept(java.util.Collections.emptyList());
+            return;
         }
-        return list;
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            List<Transaction> list = new ArrayList<>();
+            int offset = (page - 1) * perPage;
+            String uuidStr = playerUUID.toString();
+            String sql = "SELECT * FROM nottpay_transactions " +
+                    "WHERE sender = ? OR receiver = ? " +
+                    "ORDER BY timestamp DESC LIMIT ? OFFSET ?";
+
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+                pstmt.setString(1, uuidStr);
+                pstmt.setString(2, uuidStr);
+                pstmt.setInt(3, perPage);
+                pstmt.setInt(4, offset);
+
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    while (rs.next()) {
+                        list.add(new Transaction(
+                                UUID.fromString(rs.getString("sender")),
+                                UUID.fromString(rs.getString("receiver")),
+                                rs.getString("sender_name"),
+                                rs.getString("receiver_name"),
+                                rs.getString("currency"),
+                                rs.getDouble("amount"),
+                                rs.getLong("timestamp")
+                        ));
+                    }
+                }
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.SEVERE, "Error fetching paginated transactions", e);
+            }
+            // Return to main thread
+            Bukkit.getScheduler().runTask(plugin, () -> callback.accept(list));
+        });
     }
 
     /**
-     * Gets the total number of pages directly using COUNT(*).
+     * Gets the total number of pages asynchronously using COUNT(*).
      */
-    public int getTotalPages(UUID playerUUID, int perPage) {
-        String uuidStr = playerUUID.toString();
-        String sql = "SELECT COUNT(*) FROM nottpay_transactions WHERE sender = ? OR receiver = ?";
-
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-            pstmt.setString(1, uuidStr);
-            pstmt.setString(2, uuidStr);
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    int total = rs.getInt(1);
-                    return Math.max(1, (int) Math.ceil((double) total / perPage));
-                }
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Error counting transaction pages", e);
+    public void getTotalPages(UUID playerUUID, int perPage, java.util.function.Consumer<Integer> callback) {
+        if (dataSource == null) {
+            callback.accept(1);
+            return;
         }
-        return 1;
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String uuidStr = playerUUID.toString();
+            String sql = "SELECT COUNT(*) FROM nottpay_transactions WHERE sender = ? OR receiver = ?";
+            int pages = 1;
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+                pstmt.setString(1, uuidStr);
+                pstmt.setString(2, uuidStr);
+
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        int total = rs.getInt(1);
+                        pages = Math.max(1, (int) Math.ceil((double) total / perPage));
+                    }
+                }
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.SEVERE, "Error counting transaction pages", e);
+            }
+            final int result = pages;
+            Bukkit.getScheduler().runTask(plugin, () -> callback.accept(result));
+        });
     }
 }

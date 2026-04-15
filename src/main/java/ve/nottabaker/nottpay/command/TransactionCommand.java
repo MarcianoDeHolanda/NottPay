@@ -19,6 +19,7 @@ import java.util.List;
 /**
  * Handles the /transacciones command to view payment history.
  * Usage: /transacciones [page]
+ * DB queries are done asynchronously to avoid main-thread lag on remote MySQL.
  */
 public class TransactionCommand implements CommandExecutor, TabCompleter {
 
@@ -34,13 +35,11 @@ public class TransactionCommand implements CommandExecutor, TabCompleter {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         ConfigManager config = plugin.getConfigManager();
 
-        // Only players can use this command
         if (!(sender instanceof Player player)) {
             sender.sendMessage(config.getMessage("general.only-players"));
             return true;
         }
 
-        // Permission check
         String permission = plugin.getConfig().getString("transaction-command.permission", "nottpay.transactions");
         if (!permission.isEmpty() && !player.hasPermission(permission)) {
             player.sendMessage(config.getMessage("general.no-permission"));
@@ -52,86 +51,76 @@ public class TransactionCommand implements CommandExecutor, TabCompleter {
 
         if (args.length >= 1) {
             try {
-                page = Integer.parseInt(args[0]);
-                if (page < 1) page = 1;
+                page = Math.max(1, Integer.parseInt(args[0]));
             } catch (NumberFormatException e) {
                 page = 1;
             }
         }
 
-        int totalPages = plugin.getTransactionManager().getTotalPages(player.getUniqueId(), perPage);
-        List<Transaction> transactions = plugin.getTransactionManager()
-                .getTransactionsPaged(player.getUniqueId(), page, perPage);
+        final int finalPage = page;
 
-        // No transactions
-        if (transactions.isEmpty() && page == 1) {
-            player.sendMessage(config.getMessage("transactions.no-transactions"));
-            return true;
-        }
+        // Step 1: get total pages async, then step 2: get the page data async
+        plugin.getTransactionManager().getTotalPages(player.getUniqueId(), perPage, totalPages -> {
 
-        // Page out of range
-        if (transactions.isEmpty()) {
-            player.sendMessage(config.getMessage("transactions.page-not-found")
-                    .replace("{page}", String.valueOf(page)));
-            return true;
-        }
-
-        // Header
-        player.sendMessage(config.getRawMessage("transactions.header")
-                .replace("{page}", String.valueOf(page))
-                .replace("{max_page}", String.valueOf(totalPages)));
-
-        // Transaction entries
-        for (Transaction tx : transactions) {
-            String dateStr = DATE_FORMAT.format(new Date(tx.getTimestamp()));
-            String formattedAmount = AMOUNT_FORMAT.format(tx.getAmount());
-
-            // Resolve display name for the currency
-            CurrencyManager.CurrencyEntry currencyEntry = plugin.getCurrencyManager().getCurrency(tx.getCurrency());
-            String currencyDisplay = currencyEntry != null
-                    ? ConfigManager.translateColors(currencyEntry.displayName())
-                    : tx.getCurrency();
-
-            boolean isSender = tx.getSender().equals(player.getUniqueId());
-
-            String message;
-            if (isSender) {
-                message = config.getRawMessage("transactions.sent")
-                        .replace("{date}", dateStr)
-                        .replace("{amount}", formattedAmount)
-                        .replace("{currency}", currencyDisplay)
-                        .replace("{receiver}", tx.getReceiverName());
-            } else {
-                message = config.getRawMessage("transactions.received")
-                        .replace("{date}", dateStr)
-                        .replace("{amount}", formattedAmount)
-                        .replace("{currency}", currencyDisplay)
-                        .replace("{sender}", tx.getSenderName());
+            // Validate page number (this runs on main thread via callback)
+            if (finalPage > totalPages && totalPages > 0) {
+                player.sendMessage(config.getMessage("transactions.page-not-found")
+                        .replace("{page}", String.valueOf(finalPage)));
+                return;
             }
 
-            player.sendMessage(message);
-        }
+            // Step 2: fetch the transactions for this page async
+            plugin.getTransactionManager().getTransactionsPaged(player.getUniqueId(), finalPage, perPage, transactions -> {
+                if (transactions.isEmpty()) {
+                    player.sendMessage(config.getMessage("transactions.no-transactions"));
+                    return;
+                }
 
-        // Footer
-        player.sendMessage(config.getRawMessage("transactions.footer"));
+                // Header
+                player.sendMessage(config.getRawMessage("transactions.header")
+                        .replace("{page}", String.valueOf(finalPage))
+                        .replace("{max_page}", String.valueOf(totalPages)));
+
+                // Transaction entries
+                for (Transaction tx : transactions) {
+                    String dateStr = DATE_FORMAT.format(new Date(tx.getTimestamp()));
+                    String formattedAmount = AMOUNT_FORMAT.format(tx.getAmount());
+
+                    CurrencyManager.CurrencyEntry currencyEntry = plugin.getCurrencyManager().getCurrency(tx.getCurrency());
+                    String currencyDisplay = currencyEntry != null
+                            ? ConfigManager.translateColors(currencyEntry.displayName())
+                            : tx.getCurrency();
+
+                    boolean isSender = tx.getSender().equals(player.getUniqueId());
+
+                    String message;
+                    if (isSender) {
+                        message = config.getRawMessage("transactions.sent")
+                                .replace("{date}", dateStr)
+                                .replace("{amount}", formattedAmount)
+                                .replace("{currency}", currencyDisplay)
+                                .replace("{receiver}", tx.getReceiverName());
+                    } else {
+                        message = config.getRawMessage("transactions.received")
+                                .replace("{date}", dateStr)
+                                .replace("{amount}", formattedAmount)
+                                .replace("{currency}", currencyDisplay)
+                                .replace("{sender}", tx.getSenderName());
+                    }
+                    player.sendMessage(message);
+                }
+
+                // Footer
+                player.sendMessage(config.getRawMessage("transactions.footer"));
+            });
+        });
 
         return true;
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) {
-            // Suggest page numbers
-            if (sender instanceof Player player) {
-                int perPage = plugin.getConfig().getInt("transaction-command.per-page", 10);
-                int totalPages = plugin.getTransactionManager().getTotalPages(player.getUniqueId(), perPage);
-                List<String> pages = new java.util.ArrayList<>();
-                for (int i = 1; i <= Math.min(totalPages, 10); i++) {
-                    pages.add(String.valueOf(i));
-                }
-                return pages;
-            }
-        }
+        // Page number suggestions are now async-only; return empty for simplicity
         return Collections.emptyList();
     }
 }
