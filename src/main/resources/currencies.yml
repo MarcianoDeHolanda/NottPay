@@ -1,0 +1,27 @@
+# ============================================
+#          NottPay - Currencies
+# ============================================
+# Define which currencies are available for /pay
+#
+# Each currency needs:
+#   display-name: The name shown in messages (supports color codes)
+#   provider: Which economy plugin handles this currency ("vault" or "edtools")
+#   edtools-currency: (Only for edtools provider) The currency ID in EdTools
+#
+# Example EdTools currencies: gems, tokens, souls, etc.
+# Vault only supports one currency (the server's main economy)
+
+currencies:
+  money:
+    display-name: "&aMonedas"
+    provider: "vault"
+
+  gems:
+    display-name: "&bGemas"
+    provider: "edtools"
+    edtools-currency: "gems"
+
+  tokens:
+    display-name: "&dTokens"
+    provider: "edtools"
+    edtools-currency: "tokens"

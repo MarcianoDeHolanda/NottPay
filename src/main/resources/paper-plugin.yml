@@ -1,0 +1,15 @@
+name: NottPay
+version: '${version}'
+main: ve.nottabaker.nottpay.NottPay
+api-version: '1.20'
+author: nottabaker
+description: Multi-currency payment plugin with transaction history
+folia-supported: false
+dependencies:
+  server:
+    Vault:
+      required: false
+      load: BEFORE
+    EdTools:
+      required: false
+      load: BEFORE

@@ -1,0 +1,29 @@
+# ============================================
+#          NottPay - Messages
+# ============================================
+# Color codes: & followed by color code (e.g., &a = green, &c = red)
+# Placeholders: {sender}, {receiver}, {amount}, {currency}, {balance}, {player}, {input}, {command}, {min}, {page}, {max_page}, {date}
+
+pay:
+  success-sender: "&aHas enviado &e{amount} {currency} &aa &e{receiver}&a."
+  success-receiver: "&aHas recibido &e{amount} {currency} &ade &e{sender}&a."
+  insufficient-funds: "&cNo tienes suficiente &e{currency}&c. Balance: &e{balance}"
+  player-not-found: "&cEl jugador &e{player} &cno está conectado."
+  self-pay: "&cNo puedes pagarte a ti mismo."
+  invalid-amount: "&cCantidad inválida: &e{input}"
+  invalid-currency: "&cMoneda no encontrada: &e{currency}"
+  usage: "&cUso: &e/{command} <jugador> <moneda> <cantidad>"
+  min-amount: "&cLa cantidad mínima es &e{min}&c."
+
+transactions:
+  header: "&6&l━━━ Transacciones ━━━ &7(Pág. {page}/{max_page})"
+  sent: "&c↑ &7{date} &f- Enviaste &e{amount} {currency} &fa &e{receiver}"
+  received: "&a↓ &7{date} &f- Recibiste &e{amount} {currency} &fde &e{sender}"
+  no-transactions: "&7No tienes transacciones registradas."
+  footer: "&6&l━━━━━━━━━━━━━━━━━━━"
+  page-not-found: "&cLa página &e{page} &cno existe."
+
+general:
+  no-permission: "&cNo tienes permiso para usar este comando."
+  only-players: "&cSolo los jugadores pueden usar este comando."
+  reload-success: "&aConfiguración recargada correctamente."

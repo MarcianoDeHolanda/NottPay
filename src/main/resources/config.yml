@@ -1,0 +1,49 @@
+# ============================================
+#          NottPay - Configuration
+# ============================================
+
+settings:
+  # Prefix for all plugin messages
+  prefix: "&6&lNottPay &8» &r"
+
+# Pay command settings
+pay-command:
+  name: "pay"
+  aliases:
+    - "pagar"
+    - "transfer"
+  permission: "nottpay.pay"
+
+# Transaction command settings
+transaction-command:
+  name: "transacciones"
+  aliases:
+    - "transactions"
+    - "historial"
+  permission: "nottpay.transactions"
+  per-page: 10
+
+# Currency format shortcuts
+# Allows players to use shorthand like /pay player money 10k
+currency-formats:
+  enabled: true
+  # Case insensitive - both "k" and "K" will work
+  formats:
+    k: 1000
+    m: 1000000
+    b: 1000000000
+    t: 1000000000000
+    q: 1000000000000000
+  # Support decimal values (e.g., 1.5M = 1,500,000)
+  allow-decimals: true
+
+# Database settings
+database:
+  # Type can be "SQLITE" or "MYSQL"
+  type: "SQLITE"
+  mysql:
+    host: "localhost"
+    port: 3306
+    database: "nottpay"
+    username: "root"
+    password: ""
